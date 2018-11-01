@@ -15,6 +15,7 @@
 @property (nonatomic, strong) NSDictionary *defaultOptions;
 @property (nonatomic, retain) NSMutableDictionary *options, *response;
 @property (nonatomic, strong) NSArray *customButtons;
+@property (atomic, strong) NSString * livePhotoVideoUrl;
 
 @end
 
@@ -233,8 +234,9 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<NSString *,id> *)info
 {
+    
     dispatch_block_t dismissCompletionBlock = ^{
-
+    
         NSURL *imageURL = [info valueForKey:UIImagePickerControllerReferenceURL];
         NSString *mediaType = [info objectForKey:UIImagePickerControllerMediaType];
 
@@ -250,6 +252,9 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
             else {
                 fileName = [tempFileName stringByAppendingString:@".jpg"];
             }
+        }
+        else if([mediaType isEqualToString:(NSString *)kUTTypeLivePhoto]) {
+            NSLog(@"Live photo je ovo sto je odabranooo....");
         }
         else {
             NSURL *videoURL = info[UIImagePickerControllerMediaURL];
@@ -285,14 +290,19 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
 
         // Create the response object
         self.response = [[NSMutableDictionary alloc] init];
+        
+        if(self.livePhotoVideoUrl)
+        {
+            [self.response setObject:self.livePhotoVideoUrl forKey:@"livePhotoUrl"];
+        }
 
         if ([mediaType isEqualToString:(NSString *)kUTTypeImage]) { // PHOTOS
-            UIImage *originalImage;
+            UIImage *image;
             if ([[self.options objectForKey:@"allowsEditing"] boolValue]) {
-                originalImage = [info objectForKey:UIImagePickerControllerEditedImage];
+                image = [info objectForKey:UIImagePickerControllerEditedImage];
             }
             else {
-                originalImage = [info objectForKey:UIImagePickerControllerOriginalImage];
+                image = [info objectForKey:UIImagePickerControllerOriginalImage];
             }
 
             if (imageURL) {
@@ -313,17 +323,16 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
                 ALAssetsLibrary* assetsLibrary = [[ALAssetsLibrary alloc] init];
                 [assetsLibrary assetForURL:imageURL resultBlock:^(ALAsset *asset) {
                     ALAssetRepresentation *rep = [asset defaultRepresentation];
-                    const NSUInteger repSize = (NSUInteger)[rep size];
-                    Byte *buffer = (Byte*)malloc(repSize);
-                    NSUInteger buffered = [rep getBytes:buffer fromOffset:0.0 length:repSize error:nil];
+                    Byte *buffer = (Byte*)malloc(rep.size);
+                    NSUInteger buffered = [rep getBytes:buffer fromOffset:0.0 length:rep.size error:nil];
                     NSData *data = [NSData dataWithBytesNoCopy:buffer length:buffered freeWhenDone:YES];
                     [data writeToFile:path atomically:YES];
 
                     NSMutableDictionary *gifResponse = [[NSMutableDictionary alloc] init];
-                    [gifResponse setObject:@(originalImage.size.width) forKey:@"width"];
-                    [gifResponse setObject:@(originalImage.size.height) forKey:@"height"];
+                    [gifResponse setObject:@(image.size.width) forKey:@"width"];
+                    [gifResponse setObject:@(image.size.height) forKey:@"height"];
 
-                    BOOL vertical = (originalImage.size.width < originalImage.size.height) ? YES : NO;
+                    BOOL vertical = (image.size.width < image.size.height) ? YES : NO;
                     [gifResponse setObject:@(vertical) forKey:@"isVertical"];
 
                     if (![[self.options objectForKey:@"noData"] boolValue]) {
@@ -348,25 +357,25 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
                 return;
             }
 
-            UIImage *editedImage = [self fixOrientation:originalImage];  // Rotate the image for upload to web
+            image = [self fixOrientation:image];  // Rotate the image for upload to web
 
             // If needed, downscale image
-            float maxWidth = editedImage.size.width;
-            float maxHeight = editedImage.size.height;
+            float maxWidth = image.size.width;
+            float maxHeight = image.size.height;
             if ([self.options valueForKey:@"maxWidth"]) {
                 maxWidth = [[self.options valueForKey:@"maxWidth"] floatValue];
             }
             if ([self.options valueForKey:@"maxHeight"]) {
                 maxHeight = [[self.options valueForKey:@"maxHeight"] floatValue];
             }
-            editedImage = [self downscaleImageIfNecessary:editedImage maxWidth:maxWidth maxHeight:maxHeight];
+            image = [self downscaleImageIfNecessary:image maxWidth:maxWidth maxHeight:maxHeight];
 
             NSData *data;
             if ([[[self.options objectForKey:@"imageFileType"] stringValue] isEqualToString:@"png"]) {
-                data = UIImagePNGRepresentation(editedImage);
+                data = UIImagePNGRepresentation(image);
             }
             else {
-                data = UIImageJPEGRepresentation(editedImage, [[self.options valueForKey:@"quality"] floatValue]);
+                data = UIImageJPEGRepresentation(image, [[self.options valueForKey:@"quality"] floatValue]);
             }
             [data writeToFile:path atomically:YES];
 
@@ -375,7 +384,7 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
                 [self.response setObject:dataString forKey:@"data"];
             }
 
-            BOOL vertical = (editedImage.size.width < editedImage.size.height) ? YES : NO;
+            BOOL vertical = (image.size.width < image.size.height) ? YES : NO;
             [self.response setObject:@(vertical) forKey:@"isVertical"];
             NSURL *fileURL = [NSURL fileURLWithPath:path];
             NSString *filePath = [fileURL absoluteString];
@@ -394,14 +403,14 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
                 [self.response setObject:fileSizeValue forKey:@"fileSize"];
             }
 
-            [self.response setObject:@(editedImage.size.width) forKey:@"width"];
-            [self.response setObject:@(editedImage.size.height) forKey:@"height"];
+            [self.response setObject:@(image.size.width) forKey:@"width"];
+            [self.response setObject:@(image.size.height) forKey:@"height"];
 
             NSDictionary *storageOptions = [self.options objectForKey:@"storageOptions"];
             if (storageOptions && [[storageOptions objectForKey:@"cameraRoll"] boolValue] == YES && self.picker.sourceType == UIImagePickerControllerSourceTypeCamera) {
                 ALAssetsLibrary *library = [[ALAssetsLibrary alloc] init];
                 if ([[storageOptions objectForKey:@"waitUntilSaved"] boolValue]) {
-                    [library writeImageToSavedPhotosAlbum:originalImage.CGImage metadata:[info valueForKey:UIImagePickerControllerMediaMetadata] completionBlock:^(NSURL *assetURL, NSError *error) {
+                    [library writeImageToSavedPhotosAlbum:image.CGImage metadata:[info valueForKey:UIImagePickerControllerMediaMetadata] completionBlock:^(NSURL *assetURL, NSError *error) {
                         if (error) {
                             NSLog(@"Error while saving picture into photo album");
                         } else {
@@ -419,9 +428,12 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
                         }
                     }];
                 } else {
-                    [library writeImageToSavedPhotosAlbum:originalImage.CGImage metadata:[info valueForKey:UIImagePickerControllerMediaMetadata] completionBlock:nil];
+                    [library writeImageToSavedPhotosAlbum:image.CGImage metadata:[info valueForKey:UIImagePickerControllerMediaMetadata] completionBlock:nil];
                 }
             }
+        }
+        else if ([mediaType isEqualToString:(NSString *)kUTTypeImage]) {
+            NSLog(@"222 - data returned as live photo..");
         }
         else { // VIDEO
             NSURL *videoRefURL = info[UIImagePickerControllerReferenceURL];
@@ -511,9 +523,36 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
         }
     };
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [picker dismissViewControllerAnimated:YES completion:dismissCompletionBlock];
-    });
+    if (@available(iOS 11.0, *)) {
+        [self videoUrlForLivePhotoAsset:[info objectForKey:UIImagePickerControllerPHAsset] withCompletionBlock:^(NSURL *url) {
+            NSLog(@"Startano ovdje sada");
+            NSString * stringUrl;
+            if(url)
+            {
+                stringUrl = [url absoluteString];
+            }
+            else
+            {
+                stringUrl = @"NoLivePhotoUrl";
+            }
+            
+            if(!stringUrl){
+                stringUrl = @"NoLivePhotoUrl";
+            }
+            _livePhotoVideoUrl = [stringUrl copy];
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [picker dismissViewControllerAnimated:YES completion:dismissCompletionBlock];
+            });
+        }];
+        
+    } else {
+        // Fallback on earlier versions
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [picker dismissViewControllerAnimated:YES completion:dismissCompletionBlock];
+        });
+    }
+    
 }
 
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker
@@ -683,7 +722,45 @@ RCT_EXPORT_METHOD(showImagePicker:(NSDictionary *)options callback:(RCTResponseS
     }
     else {
         NSLog(@"Error setting skip backup attribute: file not found");
-        return NO;
+        return @NO;
+    }
+}
+- (void)videoUrlForLivePhotoAsset:(PHAsset*)asset withCompletionBlock:(void (^)(NSURL* url))completionBlock{
+    if([asset isKindOfClass:[PHAsset class]]){
+        NSString* identifier = [(PHAsset*)asset localIdentifier];
+        NSString* filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.mov",[NSString stringWithFormat:@"%.0f",[[NSDate date] timeIntervalSince1970]]]];
+        NSURL *fileUrl = [NSURL fileURLWithPath:filePath];
+        
+        PHLivePhotoRequestOptions* options = [PHLivePhotoRequestOptions new];
+        options.deliveryMode = PHImageRequestOptionsDeliveryModeFastFormat;
+        options.networkAccessAllowed = YES;
+        [[PHImageManager defaultManager] requestLivePhotoForAsset:asset targetSize:[UIScreen mainScreen].bounds.size contentMode:PHImageContentModeDefault options:options resultHandler:^(PHLivePhoto * _Nullable livePhoto, NSDictionary * _Nullable info) {
+            if(livePhoto){
+                NSArray* assetResources = [PHAssetResource assetResourcesForLivePhoto:livePhoto];
+                PHAssetResource* videoResource = nil;
+                for(PHAssetResource* resource in assetResources){
+                    if (resource.type == PHAssetResourceTypePairedVideo) {
+                        videoResource = resource;
+                        break;
+                    }
+                }
+                if(videoResource){
+                    [[PHAssetResourceManager defaultManager] writeDataForAssetResource:videoResource toFile:fileUrl options:nil completionHandler:^(NSError * _Nullable error) {
+                        if(!error){
+                            completionBlock(fileUrl);
+                        }else{
+                            completionBlock(nil);
+                        }
+                    }];
+                }else{
+                    completionBlock(nil);
+                }
+            }else{
+                completionBlock(nil);
+            }
+        }];
+    }else{
+        completionBlock(nil);
     }
 }
 
