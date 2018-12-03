@@ -244,7 +244,6 @@ public class ImagePickerModule extends ReactContextBaseJavaModule
     {
       requestCode = REQUEST_LAUNCH_VIDEO_CAPTURE;
       cameraIntent = new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
-      cameraIntent.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, videoQuality);
       if (videoDurationLimit > 0)
       {
         cameraIntent.putExtra(MediaStore.EXTRA_DURATION_LIMIT, videoDurationLimit);
